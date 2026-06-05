@@ -21,6 +21,7 @@ Artikel bencana luar negeri tidak disimpan. Jika artikel mengandung sinyal negar
 - Republika.co.id
 - Kumparan.com
 - CNNIndonesia.com
+- BNPB.go.id, nonaktif secara default dan hanya aktif jika memakai `--include-bnpb`
 - Antara News, nonaktif secara default dan hanya aktif jika memakai `--include-antara`
 
 ## Struktur Folder
@@ -88,9 +89,11 @@ Argumen opsional:
 - `--output-dir`: folder output, default `data/raw`
 - `--max-pages`: jumlah template halaman pencarian per keyword, default `1`
 - `--max-links-per-source`: maksimum URL artikel yang diparse per sumber, default `25`
+- `--archive-days`: coba crawling arsip N hari terakhir, contoh `--archive-days 365`
 - `--delay`: jeda antar request dalam detik, default `1.5`
 - `--timeout`: timeout request dalam detik, default `15`
 - `--include-antara`: aktifkan Antara News secara manual. Secara default Antara tidak dipakai.
+- `--include-bnpb`: aktifkan BNPB.go.id secara manual. Secara default BNPB tidak dipakai karena endpoint pencariannya dapat mengembalikan error 500.
 - `--keywords`: keyword pencarian manual
 
 Contoh:
@@ -99,10 +102,24 @@ Contoh:
 python main.py --keywords banjir "gempa bumi" longsor kebakaran --max-links-per-source 30
 ```
 
+Contoh crawling arsip 1 tahun terakhir:
+
+```bash
+python main.py --archive-days 365 --max-links-per-source 200 --delay 2
+```
+
+Archive crawling melakukan pre-filter URL sebelum artikel diparse. URL dari kanal seperti `/topik/`, `/pandangan/`, `/opini/`, `/cekfakta/`, `/gaya-hidup/`, `/otomotif/`, `/properti/`, `/hiburan/`, `/bola/`, `/sport/`, `/zodiak/`, dan `/feature/` ditolak sejak tahap link collection. Kanal umum seperti nasional, regional, peristiwa, news, dan lingkungan tetap harus memiliki hint bencana pada URL atau anchor text, kecuali halaman/tag bencana.
+
 Contoh jika ingin mengaktifkan Antara News secara manual:
 
 ```bash
 python main.py --include-antara
+```
+
+Contoh jika ingin mengaktifkan BNPB secara manual:
+
+```bash
+python main.py --include-bnpb
 ```
 
 ## Format Output Dataset
@@ -179,7 +196,7 @@ proyek infrastruktur, edukasi, geologi, geologis
 ## Alur Scraping
 
 1. `main.py` membangun scraper untuk setiap sumber berita.
-2. `get_article_links()` mencari URL kandidat berdasarkan keyword bencana. Tempo, Republika, dan Kumparan memakai sitemap terlebih dahulu, lalu fallback ke halaman kategori jika sitemap tidak menghasilkan link.
+2. `get_article_links()` mencari URL kandidat dari arsip, halaman kategori, sitemap, dan pencarian keyword. URL disimpan ke `set()` per source agar link yang sama dari keyword/kategori berbeda tidak ditambahkan ulang.
 3. `parse_article()` mengambil judul, tanggal, penulis, dan isi artikel.
 4. `clean_text()` membersihkan whitespace dan karakter HTML.
 5. `is_disaster_article()` mengecek keyword bencana.
@@ -193,6 +210,8 @@ proyek infrastruktur, edukasi, geologi, geologis
 Website berita sering mengubah struktur HTML. Jika artikel dari salah satu sumber kosong, perbarui selector pada `scrapers/sources.py` atau modul scraper sumber terkait.
 
 Scraper memeriksa `robots.txt` sebelum mengambil halaman pencarian, sitemap, kategori, dan artikel. Jeda request dapat diatur lewat `--delay`.
+
+Log scraping menampilkan `unique_urls_found`, `duplicate_urls_skipped`, `archive_urls_found`, `archive_urls_skipped`, dan `archive_urls_after_filter` untuk memantau apakah run memperluas artikel bencana unik atau hanya menambah URL mentah.
 
 Dataset ini dapat diproses lanjut di `data/processed/` untuk anotasi NER dengan label:
 

@@ -5,7 +5,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Iterable
 from urllib.parse import urljoin, urlparse
 
@@ -23,11 +23,46 @@ from utils.http import HttpClient
 from utils.text import clean_text
 
 
+BLOCKED_URL_KEYWORDS = [
+    "/topik/",
+    "/pandangan/",
+    "/opini/",
+    "/cekfakta/",
+    "/cek-fakta/",
+    "/gaya-hidup/",
+    "/gaya_hidup/",
+    "/lifestyle/",
+    "/otomotif/",
+    "/properti/",
+    "/property/",
+    "/hiburan/",
+    "/entertainment/",
+    "/bola/",
+    "/sport/",
+    "/sports/",
+    "/zodiak/",
+    "/feature/",
+]
+
+
+FOCUS_URL_KEYWORDS = [
+    "nasional",
+    "regional",
+    "peristiwa",
+    "news",
+    "berita",
+    "bencana",
+    "lingkungan",
+]
+
+
 @dataclass(frozen=True)
 class SourceConfig:
     name: str
     base_url: str
     search_urls: list[str]
+    archive_url_templates: list[str] = field(default_factory=list)
+    category_urls: list[str] = field(default_factory=list)
     link_allow_patterns: list[str] = field(default_factory=list)
     title_selectors: list[str] = field(default_factory=list)
     date_selectors: list[str] = field(default_factory=list)
@@ -41,11 +76,40 @@ class BaseNewsScraper:
         self.config = config
         self.client = client or HttpClient()
         self.netloc = urlparse(config.base_url).netloc.replace("www.", "")
+        self.unique_urls_found = 0
+        self.duplicate_urls_skipped = 0
+        self.archive_urls_found = 0
+        self.archive_urls_skipped = 0
+        self.archive_urls_after_filter = 0
 
-    def get_article_links(self, keywords: Iterable[str], max_pages: int = 1) -> list[str]:
+    def get_article_links(
+        self,
+        keywords: Iterable[str],
+        max_pages: int = 1,
+        archive_days: int = 0,
+    ) -> list[str]:
         links: list[str] = []
         seen: set[str] = set()
+        self.unique_urls_found = 0
+        self.duplicate_urls_skipped = 0
+        self.archive_urls_found = 0
+        self.archive_urls_skipped = 0
+        self.archive_urls_after_filter = 0
 
+        self._collect_from_archive_pages(links, seen, max_pages=max_pages, archive_days=archive_days)
+        self._collect_from_category_pages(links, seen, max_pages=max_pages)
+        self._collect_from_search_pages(links, seen, keywords=keywords, max_pages=max_pages)
+
+        self.unique_urls_found = len(seen)
+        return links
+
+    def _collect_from_search_pages(
+        self,
+        links: list[str],
+        seen: set[str],
+        keywords: Iterable[str],
+        max_pages: int,
+    ) -> None:
         for keyword in keywords:
             for url_template in self.config.search_urls[:max_pages]:
                 search_url = url_template.format(query=keyword.replace(" ", "+"))
@@ -57,20 +121,101 @@ class BaseNewsScraper:
                     continue
 
                 soup = BeautifulSoup(html, "lxml")
-                for anchor in soup.find_all("a", href=True):
-                    href = anchor.get("href")
-                    url = self._normalize_url(href)
-                    if not url or url in seen:
-                        continue
-                    if not self.client.can_fetch(url):
-                        logging.info("Skipping disallowed article link by robots.txt: %s", url)
-                        continue
-                    anchor_text = clean_text(anchor.get_text(" "))
-                    if self._looks_like_article_url(url, anchor_text):
-                        seen.add(url)
-                        links.append(url)
+                self._collect_links_from_soup(soup, links, seen, require_article_hint=True)
 
-        return links
+    def _collect_from_archive_pages(
+        self,
+        links: list[str],
+        seen: set[str],
+        max_pages: int,
+        archive_days: int,
+    ) -> None:
+        if archive_days <= 0 or not self.config.archive_url_templates:
+            return
+
+        for archive_date in self._iter_archive_dates(archive_days):
+            for url_template in self.config.archive_url_templates:
+                for page in range(1, max_pages + 1):
+                    archive_url = self._format_archive_url(url_template, archive_date, page)
+                    if not self.client.can_fetch(archive_url):
+                        logging.info("Skipping disallowed archive by robots.txt: %s", archive_url)
+                        continue
+                    html = self.client.get(archive_url)
+                    if not html:
+                        continue
+
+                    soup = BeautifulSoup(html, "lxml")
+                    self._collect_links_from_soup(
+                        soup,
+                        links,
+                        seen,
+                        require_article_hint=True,
+                        context_text=archive_url,
+                        count_archive_stats=True,
+                    )
+
+    def _collect_from_category_pages(
+        self,
+        links: list[str],
+        seen: set[str],
+        max_pages: int,
+    ) -> None:
+        for category_url in self.config.category_urls:
+            for page in range(1, max_pages + 1):
+                url = self._format_page_url(category_url, page)
+                if not self.client.can_fetch(url):
+                    logging.info("Skipping disallowed category by robots.txt: %s", url)
+                    continue
+                html = self.client.get(url)
+                if not html:
+                    continue
+
+                soup = BeautifulSoup(html, "lxml")
+                self._collect_links_from_soup(
+                    soup,
+                    links,
+                    seen,
+                    require_article_hint=not self._is_disaster_context(url),
+                    context_text=url,
+                )
+
+    def _collect_links_from_soup(
+        self,
+        soup: BeautifulSoup,
+        links: list[str],
+        seen: set[str],
+        require_article_hint: bool,
+        context_text: str = "",
+        count_archive_stats: bool = False,
+    ) -> None:
+        for anchor in soup.find_all("a", href=True):
+            url = self._normalize_url(anchor.get("href"))
+            if not url:
+                continue
+            if count_archive_stats:
+                self.archive_urls_found += 1
+            if url in seen:
+                self.duplicate_urls_skipped += 1
+                if count_archive_stats:
+                    self.archive_urls_skipped += 1
+                continue
+            if not self.client.can_fetch(url):
+                logging.info("Skipping disallowed article link by robots.txt: %s", url)
+                if count_archive_stats:
+                    self.archive_urls_skipped += 1
+                continue
+            anchor_text = clean_text(anchor.get_text(" "))
+            if not self._passes_url_prefilter(url, anchor_text, context_text=context_text):
+                if count_archive_stats:
+                    self.archive_urls_skipped += 1
+                continue
+            if self._looks_like_article_url(url, anchor_text, require_article_hint=require_article_hint):
+                seen.add(url)
+                links.append(url)
+                if count_archive_stats:
+                    self.archive_urls_after_filter += 1
+            elif count_archive_stats:
+                self.archive_urls_skipped += 1
 
     def parse_article(self, url: str) -> dict | None:
         if not self.client.can_fetch(url):
@@ -128,13 +273,18 @@ class BaseNewsScraper:
             return None
         return parsed._replace(fragment="", query=parsed.query).geturl()
 
-    def _looks_like_article_url(self, url: str, anchor_text: str) -> bool:
+    def _looks_like_article_url(
+        self,
+        url: str,
+        anchor_text: str,
+        require_article_hint: bool = True,
+    ) -> bool:
         if self.config.link_allow_patterns:
             if not any(re.search(pattern, url, re.IGNORECASE) for pattern in self.config.link_allow_patterns):
                 return False
 
         text = f"{url} {anchor_text}".casefold()
-        negative_paths = ["/tag/", "/tags/", "/search", "/indeks", "/video/", "/foto/"]
+        negative_paths = ["/tag/", "/tags/", "/search", "/indeks", "/video/", "/foto/", *BLOCKED_URL_KEYWORDS]
         if any(path in text for path in negative_paths):
             return False
 
@@ -156,7 +306,73 @@ class BaseNewsScraper:
             "hanyut",
             "rusak",
         ]
-        return any(token in text for token in article_hint_tokens)
+        return not require_article_hint or any(token in text for token in article_hint_tokens)
+
+    def _passes_url_prefilter(self, url: str, anchor_text: str = "", context_text: str = "") -> bool:
+        text = f"{url} {anchor_text} {context_text}".casefold()
+        normalized_text = text.replace("_", "-")
+        if any(blocked in normalized_text for blocked in BLOCKED_URL_KEYWORDS):
+            return False
+
+        has_focus = any(keyword in normalized_text for keyword in FOCUS_URL_KEYWORDS)
+        if has_focus:
+            return True
+
+        disaster_hint_tokens = [
+            "bencana",
+            "banjir",
+            "gempa",
+            "longsor",
+            "kebakaran",
+            "erupsi",
+            "tsunami",
+            "evakuasi",
+            "mengungsi",
+            "tewas",
+            "meninggal",
+            "terdampak",
+            "bpbd",
+            "bnpb",
+        ]
+        return any(token in normalized_text for token in disaster_hint_tokens)
+
+    def _is_disaster_context(self, text: str) -> bool:
+        normalized_text = text.casefold()
+        return any(
+            token in normalized_text
+            for token in [
+                "bencana",
+                "banjir",
+                "gempa",
+                "longsor",
+                "kebakaran",
+                "erupsi",
+                "tsunami",
+            ]
+        )
+
+    def _iter_archive_dates(self, archive_days: int) -> Iterable[date]:
+        today = datetime.now().date()
+        for offset in range(max(archive_days, 0)):
+            yield today - timedelta(days=offset)
+
+    def _format_archive_url(self, url_template: str, archive_date: date, page: int) -> str:
+        return url_template.format(
+            date=archive_date.isoformat(),
+            yyyymmdd=archive_date.strftime("%Y%m%d"),
+            year=archive_date.year,
+            month=f"{archive_date.month:02d}",
+            day=f"{archive_date.day:02d}",
+            page=page,
+        )
+
+    def _format_page_url(self, url: str, page: int) -> str:
+        if "{page}" in url:
+            return url.format(page=page)
+        if page <= 1:
+            return url
+        separator = "&" if "?" in url else "?"
+        return f"{url}{separator}page={page}"
 
     def _remove_noise(self, soup: BeautifulSoup) -> None:
         selectors = [

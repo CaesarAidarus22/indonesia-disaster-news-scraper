@@ -39,8 +39,13 @@ def get_article_links(
     keywords: list[str],
     max_pages: int,
     max_links: int,
+    archive_days: int,
 ) -> list[str]:
-    links = scraper.get_article_links(keywords=keywords, max_pages=max_pages)
+    links = scraper.get_article_links(
+        keywords=keywords,
+        max_pages=max_pages,
+        archive_days=archive_days,
+    )
     return links[:max_links]
 
 
@@ -55,12 +60,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", default="data/raw", help="Output directory for CSV and JSON files.")
     parser.add_argument("--max-pages", type=int, default=1, help="Search page templates to use per keyword.")
     parser.add_argument("--max-links-per-source", type=int, default=25, help="Maximum article URLs parsed per source.")
+    parser.add_argument(
+        "--archive-days",
+        type=int,
+        default=0,
+        help="Try archive crawling for the last N days, for example --archive-days 365.",
+    )
     parser.add_argument("--delay", type=float, default=1.5, help="Delay between requests in seconds.")
     parser.add_argument("--timeout", type=int, default=15, help="Request timeout in seconds.")
     parser.add_argument(
         "--include-antara",
         action="store_true",
         help="Enable Antara News scraping manually. Disabled by default.",
+    )
+    parser.add_argument(
+        "--include-bnpb",
+        action="store_true",
+        help="Enable BNPB.go.id scraping manually. Disabled by default because its search endpoint can return 500.",
     )
     parser.add_argument(
         "--keywords",
@@ -82,20 +98,47 @@ def main() -> None:
         delay_seconds=args.delay,
         timeout_seconds=args.timeout,
         include_antara=args.include_antara,
+        include_bnpb=args.include_bnpb,
     )
     all_links: list[tuple[BaseNewsScraper, str]] = []
+    global_seen_urls: set[str] = set()
+    global_duplicate_urls_skipped = 0
 
     logging.info("Using %d disaster filter keywords: %s", len(DISASTER_KEYWORDS), ", ".join(DISASTER_KEYWORDS))
     for scraper in scrapers:
         logging.info("Collecting links from %s", scraper.config.name)
-        links = get_article_links(
+        candidate_links = get_article_links(
             scraper=scraper,
             keywords=args.keywords,
             max_pages=args.max_pages,
             max_links=args.max_links_per_source,
+            archive_days=args.archive_days,
         )
-        logging.info("Found %d candidate links from %s", len(links), scraper.config.name)
-        all_links.extend((scraper, url) for url in links)
+        unique_links: list[str] = []
+        for url in candidate_links:
+            if url in global_seen_urls:
+                global_duplicate_urls_skipped += 1
+                continue
+            global_seen_urls.add(url)
+            unique_links.append(url)
+
+        logging.info(
+            (
+                "Collecting links from %s complete: "
+                "unique_urls_found=%d duplicate_urls_skipped=%d "
+                "archive_urls_found=%d archive_urls_skipped=%d archive_urls_after_filter=%d "
+                "global_duplicates_skipped=%d"
+            ),
+            scraper.config.name,
+            scraper.unique_urls_found,
+            scraper.duplicate_urls_skipped,
+            scraper.archive_urls_found,
+            scraper.archive_urls_skipped,
+            scraper.archive_urls_after_filter,
+            global_duplicate_urls_skipped,
+        )
+        logging.info("Found %d unique candidate links from %s", len(unique_links), scraper.config.name)
+        all_links.extend((scraper, url) for url in unique_links)
 
     records: list[dict] = []
     seen_urls: set[str] = set()

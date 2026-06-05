@@ -13,6 +13,8 @@ class KumparanScraper(SitemapFirstNewsScraper):
     ]
     category_urls = [
         "https://kumparan.com/topic/bencana",
+        "https://kumparan.com/topic/banjir",
+        "https://kumparan.com/topic/gempa",
         "https://kumparan.com/topic/peristiwa",
         "https://kumparan.com/news",
     ]
@@ -33,8 +35,17 @@ class KumparanScraper(SitemapFirstNewsScraper):
             client=client,
         )
 
-    def get_article_links(self, keywords: Iterable[str], max_pages: int = 1) -> list[str]:
-        return super().get_article_links(keywords=keywords, max_pages=max_pages)
+    def get_article_links(
+        self,
+        keywords: Iterable[str],
+        max_pages: int = 1,
+        archive_days: int = 0,
+    ) -> list[str]:
+        return super().get_article_links(
+            keywords=keywords,
+            max_pages=max_pages,
+            archive_days=archive_days,
+        )
 
     def parse_article(self, url: str) -> dict | None:
         return super().parse_article(url)

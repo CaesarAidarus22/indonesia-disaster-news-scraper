@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import pandas as pd
+from pandas.errors import ParserError
 
 from utils.filters import (
     DISASTER_KEYWORDS,
@@ -145,15 +146,58 @@ CLEAN_COLUMNS = [
 def load_raw_csvs() -> pd.DataFrame:
     files = sorted(RAW_DIR.glob("*.csv"))
     if not files:
+        print("Loaded files: 0")
+        print("Skipped files: 0")
         return pd.DataFrame(columns=CLEAN_COLUMNS)
 
     frames: list[pd.DataFrame] = []
+    loaded_files = 0
+    skipped_files = 0
     for file_path in files:
-        frame = pd.read_csv(file_path)
+        print(f"Reading: {file_path.name}")
+        frame = read_csv_safely(file_path)
+        if frame is None:
+            skipped_files += 1
+            print(f"FAILED: {file_path.name}")
+            continue
+
+        print(f"Columns found: {len(frame.columns)}")
         frame["raw_file"] = file_path.name
         frames.append(frame)
+        loaded_files += 1
 
+    print(f"Loaded files: {loaded_files}")
+    print(f"Skipped files: {skipped_files}")
+
+    if not frames:
+        return pd.DataFrame(columns=CLEAN_COLUMNS)
     return pd.concat(frames, ignore_index=True)
+
+
+def read_csv_safely(file_path: Path) -> pd.DataFrame | None:
+    try:
+        return pd.read_csv(file_path)
+    except ParserError as exc:
+        print(f"WARNING: ParserError in {file_path.name}: {exc}")
+    except Exception as exc:
+        print(f"WARNING: Failed to read {file_path.name}: {exc}")
+        return None
+
+    try:
+        print(f"WARNING: Retrying with on_bad_lines='skip': {file_path.name}")
+        return pd.read_csv(file_path, on_bad_lines="skip")
+    except ParserError as exc:
+        print(f"WARNING: ParserError after on_bad_lines='skip' in {file_path.name}: {exc}")
+    except Exception as exc:
+        print(f"WARNING: Retry failed for {file_path.name}: {exc}")
+        return None
+
+    try:
+        print(f"WARNING: Retrying with python engine fallback: {file_path.name}")
+        return pd.read_csv(file_path, engine="python", on_bad_lines="skip")
+    except Exception as exc:
+        print(f"WARNING: Python engine fallback failed for {file_path.name}: {exc}")
+        return None
 
 
 def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
@@ -277,7 +321,8 @@ def write_report(accepted_df: pd.DataFrame, rejected_df: pd.DataFrame, total_raw
     lines.append("Cleaning Report")
     lines.append("================")
     lines.append(f"Raw rows: {total_raw}")
-    lines.append(f"Unique rows after URL/title deduplication: {total_unique}")
+    lines.append(f"Unique rows: {total_unique}")
+    lines.append(f"Duplicate rows removed: {total_raw - total_unique}")
     lines.append(f"Accepted rows: {len(accepted_df)}")
     lines.append(f"Rejected rows: {len(rejected_df)}")
     lines.append("")

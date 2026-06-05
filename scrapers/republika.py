@@ -15,6 +15,8 @@ class RepublikaScraper(SitemapFirstNewsScraper):
         "https://www.republika.co.id/kanal/news/nasional",
         "https://www.republika.co.id/kanal/news/regional",
         "https://www.republika.co.id/tag/bencana",
+        "https://www.republika.co.id/tag/banjir",
+        "https://www.republika.co.id/tag/gempa",
     ]
 
     def __init__(self, client=None) -> None:
@@ -33,8 +35,17 @@ class RepublikaScraper(SitemapFirstNewsScraper):
             client=client,
         )
 
-    def get_article_links(self, keywords: Iterable[str], max_pages: int = 1) -> list[str]:
-        return super().get_article_links(keywords=keywords, max_pages=max_pages)
+    def get_article_links(
+        self,
+        keywords: Iterable[str],
+        max_pages: int = 1,
+        archive_days: int = 0,
+    ) -> list[str]:
+        return super().get_article_links(
+            keywords=keywords,
+            max_pages=max_pages,
+            archive_days=archive_days,
+        )
 
     def parse_article(self, url: str) -> dict | None:
         return super().parse_article(url)

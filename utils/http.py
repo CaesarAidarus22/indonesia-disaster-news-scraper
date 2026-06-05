@@ -31,25 +31,38 @@ class HttpClient:
         self._robots_cache: dict[str, RobotFileParser | None] = {}
 
     def get(self, url: str) -> str | None:
+        html, _ = self.get_with_status(url)
+        return html
+
+    def get_with_status(self, url: str, log_errors: bool = True) -> tuple[str | None, int | None]:
         time.sleep(self.delay_seconds)
         try:
             response = self.session.get(url, timeout=self.timeout_seconds)
             if response.status_code == 404:
-                logging.warning("404 not found: %s", url)
-                return None
+                if log_errors:
+                    logging.warning("404 not found: %s", url)
+                return None, response.status_code
+            if response.status_code >= 500:
+                if log_errors:
+                    logging.warning("HTTP server error for %s: %s", url, response.status_code)
+                return None, response.status_code
             response.raise_for_status()
             if not response.encoding:
                 response.encoding = response.apparent_encoding
-            return response.text
+            return response.text, response.status_code
         except requests.exceptions.Timeout:
-            logging.warning("Timeout when fetching %s", url)
+            if log_errors:
+                logging.warning("Timeout when fetching %s", url)
         except requests.exceptions.ConnectionError:
-            logging.warning("Connection failed when fetching %s", url)
+            if log_errors:
+                logging.warning("Connection failed when fetching %s", url)
         except requests.exceptions.HTTPError as exc:
-            logging.warning("HTTP error for %s: %s", url, exc)
+            if log_errors:
+                logging.warning("HTTP error for %s: %s", url, exc)
         except requests.exceptions.RequestException as exc:
-            logging.warning("Request failed for %s: %s", url, exc)
-        return None
+            if log_errors:
+                logging.warning("Request failed for %s: %s", url, exc)
+        return None, None
 
     def can_fetch(self, url: str) -> bool:
         parsed = urlparse(url)

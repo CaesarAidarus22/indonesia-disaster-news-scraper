@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from scrapers.bnpb import BNPBScraper
 from scrapers.kumparan import KumparanScraper
 from scrapers.republika import RepublikaScraper
 from scrapers.tempo import TempoScraper
@@ -8,19 +9,6 @@ from utils.http import HttpClient
 
 
 SOURCE_CONFIGS = [
-    SourceConfig(
-        name="BNPB.go.id",
-        base_url="https://www.bnpb.go.id/",
-        search_urls=[
-            "https://www.bnpb.go.id/berita?search={query}",
-            "https://www.bnpb.go.id/search?q={query}",
-        ],
-        link_allow_patterns=[r"/berita/"],
-        title_selectors=["h1", ".detail-title", ".entry-title"],
-        date_selectors=["time", ".date", ".detail-date", ".post-date"],
-        author_selectors=[".author", ".post-author"],
-        content_selectors=["article", ".detail-content", ".entry-content", ".post-content"],
-    ),
     SourceConfig(
         name="Antara News",
         base_url="https://www.antaranews.com/",
@@ -40,6 +28,14 @@ SOURCE_CONFIGS = [
         search_urls=[
             "https://search.kompas.com/search/?q={query}",
         ],
+        archive_url_templates=[
+            "https://indeks.kompas.com/?site=all&date={date}&page={page}",
+        ],
+        category_urls=[
+            "https://nasional.kompas.com/",
+            "https://regional.kompas.com/",
+            "https://www.kompas.com/tag/bencana",
+        ],
         link_allow_patterns=[r"/read/\d+/"],
         title_selectors=["h1.read__title", "h1", ".read__title"],
         date_selectors=[".read__time", "time"],
@@ -53,6 +49,15 @@ SOURCE_CONFIGS = [
         search_urls=[
             "https://www.detik.com/search/searchall?query={query}",
         ],
+        archive_url_templates=[
+            "https://news.detik.com/indeks?date={yyyymmdd}&page={page}",
+        ],
+        category_urls=[
+            "https://news.detik.com/berita",
+            "https://news.detik.com/indeks",
+            "https://www.detik.com/tag/bencana",
+            "https://www.detik.com/search/searchall?query=bencana&sortby=time&page={page}",
+        ],
         link_allow_patterns=[r"/d-\d+/", r"/berita/"],
         title_selectors=["h1.detail__title", "h1"],
         date_selectors=[".detail__date", "time"],
@@ -65,6 +70,10 @@ SOURCE_CONFIGS = [
         base_url="https://www.cnnindonesia.com/",
         search_urls=[
             "https://www.cnnindonesia.com/search/?query={query}",
+        ],
+        category_urls=[
+            "https://www.cnnindonesia.com/nasional",
+            "https://www.cnnindonesia.com/tag/bencana",
         ],
         link_allow_patterns=[r"/\d{8,}/"],
         title_selectors=["h1", ".title"],
@@ -80,13 +89,18 @@ def build_scrapers(
     delay_seconds: float,
     timeout_seconds: int,
     include_antara: bool = False,
+    include_bnpb: bool = False,
 ) -> list[BaseNewsScraper]:
     client = HttpClient(delay_seconds=delay_seconds, timeout_seconds=timeout_seconds)
-    scrapers: list[BaseNewsScraper] = [
+    scrapers: list[BaseNewsScraper] = []
+    if include_bnpb:
+        scrapers.append(BNPBScraper(client=client))
+
+    scrapers.extend(
         BaseNewsScraper(config, client=client)
         for config in SOURCE_CONFIGS
         if include_antara or config.name != "Antara News"
-    ]
+    )
     scrapers.extend(
         [
             TempoScraper(client=client),
