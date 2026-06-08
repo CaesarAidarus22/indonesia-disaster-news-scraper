@@ -1,48 +1,49 @@
 Cleaning Report
 ================
-Raw rows: 283
-Unique rows: 229
-Duplicate rows removed: 54
-Accepted rows: 209
-Rejected rows: 74
+Raw rows: 543
+Unique rows: 426
+Duplicate rows removed: 117
+Accepted rows: 404
+Rejected rows: 139
 
 Accepted per source
 -------------------
 Antara News: 3
-Contoh News: 1
-Detik.com: 24
-Kompas.com: 139
-Kumparan.com: 16
-Republika.co.id: 11
+Detik.com: 63
+Kompas.com: 287
+Kumparan.com: 24
+Republika.co.id: 12
 Tempo.co: 15
 
 Rejected per source
 -------------------
-Detik.com: 12
-Kompas.com: 25
-Kumparan.com: 6
-Republika.co.id: 21
+Detik.com: 18
+Kompas.com: 48
+Kumparan.com: 15
+Republika.co.id: 48
 Tempo.co: 10
 
 Rejected reasons
 ----------------
-duplicate_url_or_title: 54
+duplicate_url_or_title: 117
 rejected_channel: 19
-non_event_topic_dominant: 1
+non_event_topic_dominant: 3
 
 Accepted disaster types
 -----------------------
-banjir: 56
-kebakaran: 43
-gempa bumi: 30
-tanah longsor: 23
+banjir: 131
+kebakaran: 68
+gempa bumi: 59
+tanah longsor: 42
+evakuasi: 36
 erupsi gunung api: 18
-evakuasi: 17
+bpbd: 14
+kerusakan: 13
+angin puting beliung: 7
 kekeringan: 5
-bpbd: 5
-angin puting beliung: 4
-kerusakan: 3
+korban jiwa: 4
 abrasi: 2
+bnpb: 2
 pengungsi: 1
-korban jiwa: 1
 bantuan logistik: 1
+gelombang tinggi: 1
