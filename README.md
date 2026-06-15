@@ -20,6 +20,7 @@ Artikel bencana luar negeri tidak disimpan. Jika artikel mengandung sinyal negar
 - Tempo.co
 - Republika.co.id
 - Kumparan.com
+- Liputan6.com
 - CNNIndonesia.com
 - BNPB.go.id, nonaktif secara default dan hanya aktif jika memakai `--include-bnpb`
 - Antara News, nonaktif secara default dan hanya aktif jika memakai `--include-antara`
@@ -106,6 +107,12 @@ Contoh crawling arsip 1 tahun terakhir:
 
 ```bash
 python main.py --archive-days 365 --max-links-per-source 200 --delay 2
+```
+
+Command uji kecil Liputan6:
+
+```bash
+python main.py --keywords banjir --max-links-per-source 20
 ```
 
 Archive crawling melakukan pre-filter URL sebelum artikel diparse. URL dari kanal seperti `/topik/`, `/pandangan/`, `/opini/`, `/cekfakta/`, `/gaya-hidup/`, `/otomotif/`, `/properti/`, `/hiburan/`, `/bola/`, `/sport/`, `/zodiak/`, dan `/feature/` ditolak sejak tahap link collection. Kanal umum seperti nasional, regional, peristiwa, news, dan lingkungan tetap harus memiliki hint bencana pada URL atau anchor text, kecuali halaman/tag bencana.

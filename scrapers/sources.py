@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from scrapers.bnpb import BNPBScraper
 from scrapers.kumparan import KumparanScraper
+from scrapers.liputan6 import Liputan6Scraper
 from scrapers.republika import RepublikaScraper
 from scrapers.tempo import TempoScraper
 from scrapers.base import BaseNewsScraper, SourceConfig
@@ -106,6 +107,7 @@ def build_scrapers(
             TempoScraper(client=client),
             RepublikaScraper(client=client),
             KumparanScraper(client=client),
+            Liputan6Scraper(client=client),
         ]
     )
     return scrapers

@@ -103,6 +103,7 @@ def main() -> None:
     all_links: list[tuple[BaseNewsScraper, str]] = []
     global_seen_urls: set[str] = set()
     global_duplicate_urls_skipped = 0
+    source_stats: dict[str, dict[str, int]] = {}
 
     logging.info("Using %d disaster filter keywords: %s", len(DISASTER_KEYWORDS), ", ".join(DISASTER_KEYWORDS))
     for scraper in scrapers:
@@ -122,6 +123,9 @@ def main() -> None:
             global_seen_urls.add(url)
             unique_links.append(url)
 
+        source_stats.setdefault(scraper.config.name, {"candidate": 0, "parsed": 0, "accepted": 0})
+        source_stats[scraper.config.name]["candidate"] += len(unique_links)
+
         logging.info(
             (
                 "Collecting links from %s complete: "
@@ -138,6 +142,8 @@ def main() -> None:
             global_duplicate_urls_skipped,
         )
         logging.info("Found %d unique candidate links from %s", len(unique_links), scraper.config.name)
+        if scraper.config.name == "Liputan6.com":
+            logging.info("Found %d candidate links from Liputan6.com", len(unique_links))
         all_links.extend((scraper, url) for url in unique_links)
 
     records: list[dict] = []
@@ -146,8 +152,11 @@ def main() -> None:
         if url in seen_urls:
             continue
         seen_urls.add(url)
+        source_stats.setdefault(scraper.config.name, {"candidate": 0, "parsed": 0, "accepted": 0})
+        source_stats[scraper.config.name]["parsed"] += 1
         record = parse_article(scraper, url)
         if record:
+            source_stats[scraper.config.name]["accepted"] += 1
             records.append(record)
 
     records = remove_duplicate_urls(records)
@@ -161,6 +170,12 @@ def main() -> None:
 
     logging.info("Saved %d filtered articles to %s", len(records), csv_path)
     logging.info("Saved %d filtered articles to %s", len(records), json_path)
+    if "Liputan6.com" in source_stats:
+        liputan6_stats = source_stats["Liputan6.com"]
+        logging.info("Parsed %d articles from Liputan6.com", liputan6_stats["parsed"])
+        print(f"Liputan6 candidate links: {liputan6_stats['candidate']}")
+        print(f"Liputan6 parsed articles: {liputan6_stats['parsed']}")
+        print(f"Liputan6 accepted articles: {liputan6_stats['accepted']}")
 
 
 if __name__ == "__main__":
