@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from scrapers.bnpb import BNPBScraper
+from scrapers.cnnindonesia import CNNIndonesiaScraper
 from scrapers.kumparan import KumparanScraper
 from scrapers.liputan6 import Liputan6Scraper
+from scrapers.okezone import OkezoneScraper
 from scrapers.republika import RepublikaScraper
+from scrapers.sindonews import SindonewsScraper
+from scrapers.suara import SuaraScraper
 from scrapers.tempo import TempoScraper
+from scrapers.tribunnews import TribunnewsScraper
 from scrapers.base import BaseNewsScraper, SourceConfig
 from utils.http import HttpClient
 
@@ -66,23 +71,6 @@ SOURCE_CONFIGS = [
         content_selectors=[".detail__body-text", "article"],
         remove_selectors=[".detail__body-tag", ".parallaxindetail"],
     ),
-    SourceConfig(
-        name="CNNIndonesia.com",
-        base_url="https://www.cnnindonesia.com/",
-        search_urls=[
-            "https://www.cnnindonesia.com/search/?query={query}",
-        ],
-        category_urls=[
-            "https://www.cnnindonesia.com/nasional",
-            "https://www.cnnindonesia.com/tag/bencana",
-        ],
-        link_allow_patterns=[r"/\d{8,}/"],
-        title_selectors=["h1", ".title"],
-        date_selectors=[".text-cnn_grey", "time"],
-        author_selectors=[".author", ".detail-author"],
-        content_selectors=[".detail-text", "article"],
-        remove_selectors=[".paradetail", ".video"],
-    ),
 ]
 
 
@@ -104,10 +92,15 @@ def build_scrapers(
     )
     scrapers.extend(
         [
+            CNNIndonesiaScraper(client=client),
             TempoScraper(client=client),
             RepublikaScraper(client=client),
             KumparanScraper(client=client),
             Liputan6Scraper(client=client),
+            TribunnewsScraper(client=client),
+            SindonewsScraper(client=client),
+            SuaraScraper(client=client),
+            OkezoneScraper(client=client),
         ]
     )
     return scrapers

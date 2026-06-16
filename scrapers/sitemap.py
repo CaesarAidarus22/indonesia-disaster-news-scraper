@@ -15,6 +15,7 @@ from utils.text import clean_text
 class SitemapFirstNewsScraper(BaseNewsScraper):
     sitemap_urls: list[str] = []
     category_urls: list[str] = []
+    sitemap_allow_keywords: list[str] = []
 
     def __init__(self, config: SourceConfig, client=None) -> None:
         super().__init__(config=config, client=client)
@@ -32,6 +33,10 @@ class SitemapFirstNewsScraper(BaseNewsScraper):
         self.archive_urls_found = 0
         self.archive_urls_skipped = 0
         self.archive_urls_after_filter = 0
+        self.sitemap_urls_found = 0
+        self.category_urls_found = 0
+        self.article_urls_before_filter = 0
+        self.article_urls_after_filter = 0
 
         self._collect_from_sitemaps(links, seen, max_pages=max_pages, archive_days=archive_days)
         if not links:
@@ -51,14 +56,15 @@ class SitemapFirstNewsScraper(BaseNewsScraper):
         max_pages: int,
         archive_days: int,
     ) -> None:
-        sitemap_queue = self.sitemap_urls[:max_pages]
+        sitemap_queue = list(self.sitemap_urls)
         processed = 0
-        max_sitemaps = max(1, max_pages) * 8
+        max_sitemaps = max(20, max_pages * 20)
         cutoff = self._archive_cutoff(archive_days)
 
         while sitemap_queue and processed < max_sitemaps:
             sitemap_url = sitemap_queue.pop(0)
             processed += 1
+            self.sitemap_urls_found += 1
             if not self.client.can_fetch(sitemap_url):
                 logging.info("Skipping disallowed sitemap by robots.txt: %s", sitemap_url)
                 continue
@@ -70,7 +76,7 @@ class SitemapFirstNewsScraper(BaseNewsScraper):
             soup = BeautifulSoup(html, "xml")
             child_sitemaps = [loc.get_text(strip=True) for loc in soup.select("sitemap loc")]
             if child_sitemaps:
-                sitemap_queue.extend(child_sitemaps[:max_pages])
+                sitemap_queue.extend(self._filter_child_sitemaps(child_sitemaps))
                 continue
 
             for url_node in soup.select("url"):
@@ -81,6 +87,7 @@ class SitemapFirstNewsScraper(BaseNewsScraper):
                     continue
                 url = self._normalize_url(loc.get_text(strip=True))
                 if url:
+                    self.article_urls_before_filter += 1
                     self.archive_urls_found += 1
                 if not url or url in seen:
                     if url:
@@ -97,6 +104,7 @@ class SitemapFirstNewsScraper(BaseNewsScraper):
                 if self._looks_like_article_url(url, "", require_article_hint=True):
                     seen.add(url)
                     links.append(url)
+                    self.article_urls_after_filter += 1
                     self.archive_urls_after_filter += 1
                 else:
                     self.archive_urls_skipped += 1
@@ -108,9 +116,11 @@ class SitemapFirstNewsScraper(BaseNewsScraper):
         seen: set[str],
         max_pages: int,
     ) -> None:
-        for category_url in self.category_urls:
+        category_urls = self.category_urls or self.config.category_urls
+        for category_url in category_urls:
             for page in range(1, max_pages + 1):
                 category_page_url = self._format_page_url(category_url, page)
+                self.category_urls_found += 1
                 if not self.client.can_fetch(category_page_url):
                     logging.info("Skipping disallowed category by robots.txt: %s", category_page_url)
                     continue
@@ -126,6 +136,7 @@ class SitemapFirstNewsScraper(BaseNewsScraper):
                         if url:
                             self.duplicate_urls_skipped += 1
                         continue
+                    self.article_urls_before_filter += 1
                     if not self.client.can_fetch(url):
                         logging.info("Skipping disallowed article link by robots.txt: %s", url)
                         continue
@@ -139,6 +150,7 @@ class SitemapFirstNewsScraper(BaseNewsScraper):
                     ):
                         seen.add(url)
                         links.append(url)
+                        self.article_urls_after_filter += 1
 
     def _matches_keyword(self, text: str, keywords: Iterable[str]) -> bool:
         normalized = re.sub(r"[-_+%20]+", " ", text.casefold())
@@ -147,6 +159,16 @@ class SitemapFirstNewsScraper(BaseNewsScraper):
             if re.search(rf"(?<!\w){re.escape(normalized_keyword)}(?!\w)", normalized):
                 return True
         return False
+
+    def _filter_child_sitemaps(self, child_sitemaps: list[str]) -> list[str]:
+        if not self.sitemap_allow_keywords:
+            return child_sitemaps
+        allowed: list[str] = []
+        for sitemap_url in child_sitemaps:
+            lowered = sitemap_url.casefold()
+            if any(keyword.casefold() in lowered for keyword in self.sitemap_allow_keywords):
+                allowed.append(sitemap_url)
+        return allowed
 
     def _archive_cutoff(self, archive_days: int) -> datetime | None:
         if archive_days <= 0:

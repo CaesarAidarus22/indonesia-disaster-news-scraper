@@ -32,6 +32,16 @@ BLOCKED_URL_KEYWORDS = [
     "/gaya-hidup/",
     "/gaya_hidup/",
     "/lifestyle/",
+    "/tekno/",
+    "/technology/",
+    "/gadget/",
+    "/selebriti/",
+    "/celebrity/",
+    "/travel/",
+    "/internasional/",
+    "/international/",
+    "/luar-negeri/",
+    "/luar_negeri/",
     "/otomotif/",
     "/properti/",
     "/property/",
@@ -53,6 +63,8 @@ FOCUS_URL_KEYWORDS = [
     "berita",
     "bencana",
     "lingkungan",
+    "metro",
+    "daerah",
 ]
 
 
@@ -81,6 +93,10 @@ class BaseNewsScraper:
         self.archive_urls_found = 0
         self.archive_urls_skipped = 0
         self.archive_urls_after_filter = 0
+        self.sitemap_urls_found = 0
+        self.category_urls_found = 0
+        self.article_urls_before_filter = 0
+        self.article_urls_after_filter = 0
 
     def get_article_links(
         self,
@@ -95,6 +111,10 @@ class BaseNewsScraper:
         self.archive_urls_found = 0
         self.archive_urls_skipped = 0
         self.archive_urls_after_filter = 0
+        self.sitemap_urls_found = 0
+        self.category_urls_found = 0
+        self.article_urls_before_filter = 0
+        self.article_urls_after_filter = 0
 
         self._collect_from_archive_pages(links, seen, max_pages=max_pages, archive_days=archive_days)
         self._collect_from_category_pages(links, seen, max_pages=max_pages)
@@ -163,6 +183,7 @@ class BaseNewsScraper:
         for category_url in self.config.category_urls:
             for page in range(1, max_pages + 1):
                 url = self._format_page_url(category_url, page)
+                self.category_urls_found += 1
                 if not self.client.can_fetch(url):
                     logging.info("Skipping disallowed category by robots.txt: %s", url)
                     continue
@@ -192,6 +213,7 @@ class BaseNewsScraper:
             url = self._normalize_url(anchor.get("href"))
             if not url:
                 continue
+            self.article_urls_before_filter += 1
             if count_archive_stats:
                 self.archive_urls_found += 1
             if url in seen:
@@ -212,6 +234,7 @@ class BaseNewsScraper:
             if self._looks_like_article_url(url, anchor_text, require_article_hint=require_article_hint):
                 seen.add(url)
                 links.append(url)
+                self.article_urls_after_filter += 1
                 if count_archive_stats:
                     self.archive_urls_after_filter += 1
             elif count_archive_stats:
@@ -296,6 +319,10 @@ class BaseNewsScraper:
             "kebakaran",
             "bnpb",
             "bpbd",
+            "bmkg",
+            "cuaca ekstrem",
+            "hujan lebat",
+            "hujan deras",
             "erupsi",
             "tsunami",
             "evakuasi",
@@ -333,6 +360,10 @@ class BaseNewsScraper:
             "terdampak",
             "bpbd",
             "bnpb",
+            "bmkg",
+            "cuaca ekstrem",
+            "hujan lebat",
+            "hujan deras",
         ]
         return any(token in normalized_text for token in disaster_hint_tokens)
 
@@ -373,6 +404,11 @@ class BaseNewsScraper:
             return url
         separator = "&" if "?" in url else "?"
         return f"{url}{separator}page={page}"
+
+    def _keyword_slug(self, keyword: str) -> str:
+        slug = re.sub(r"[^\w\s-]", "", keyword.casefold())
+        slug = re.sub(r"\s+", "-", slug.strip())
+        return slug
 
     def _remove_noise(self, soup: BeautifulSoup) -> None:
         selectors = [

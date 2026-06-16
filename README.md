@@ -22,6 +22,10 @@ Artikel bencana luar negeri tidak disimpan. Jika artikel mengandung sinyal negar
 - Kumparan.com
 - Liputan6.com
 - CNNIndonesia.com
+- Tribunnews.com
+- Sindonews.com
+- Suara.com
+- Okezone.com
 - BNPB.go.id, nonaktif secara default dan hanya aktif jika memakai `--include-bnpb`
 - Antara News, nonaktif secara default dan hanya aktif jika memakai `--include-antara`
 
@@ -107,6 +111,13 @@ Contoh crawling arsip 1 tahun terakhir:
 
 ```bash
 python main.py --archive-days 365 --max-links-per-source 200 --delay 2
+```
+
+Contoh target pengumpulan dataset besar:
+
+```bash
+python main.py --archive-days 365 --max-links-per-source 500 --delay 2
+python clean_dataset.py
 ```
 
 Command uji kecil Liputan6:
@@ -218,7 +229,11 @@ Website berita sering mengubah struktur HTML. Jika artikel dari salah satu sumbe
 
 Scraper memeriksa `robots.txt` sebelum mengambil halaman pencarian, sitemap, kategori, dan artikel. Jeda request dapat diatur lewat `--delay`.
 
-Log scraping menampilkan `unique_urls_found`, `duplicate_urls_skipped`, `archive_urls_found`, `archive_urls_skipped`, dan `archive_urls_after_filter` untuk memantau apakah run memperluas artikel bencana unik atau hanya menambah URL mentah.
+Log scraping menampilkan `unique_urls_found`, `duplicate_urls_skipped`, `archive_urls_found`, `archive_urls_skipped`, `archive_urls_after_filter`, `sitemap_urls_found`, `category_urls_found`, `article_urls_before_filter`, dan `article_urls_after_filter` untuk memantau apakah run memperluas artikel bencana unik atau hanya menambah URL mentah.
+
+Di akhir scraping, `main.py` menampilkan `## Source Summary` untuk Kompas, Detik, Tempo, Republika, Kumparan, Liputan6, CNN Indonesia, Tribunnews, Sindonews, Suara, Okezone, Antara, dan BNPB. Summary berisi jumlah candidate links, parsed articles, accepted articles, dan rejected articles per source.
+
+Deduplication dilakukan dalam dua tahap: URL duplikat dibuang sebelum parsing, lalu judul yang sama atau hampir identik dibuang setelah artikel berhasil diparse.
 
 Dataset ini dapat diproses lanjut di `data/processed/` untuk anotasi NER dengan label:
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
+from difflib import SequenceMatcher
 from datetime import datetime
 from pathlib import Path
 
@@ -20,13 +22,18 @@ DEFAULT_SEARCH_KEYWORDS = [
     "tsunami",
     "tanah longsor",
     "kebakaran",
+    "kebakaran hutan",
+    "karhutla",
     "erupsi",
+    "gunung meletus",
     "puting beliung",
     "kekeringan",
     "abrasi",
     "gelombang tinggi",
     "kecelakaan industri",
     "evakuasi",
+    "korban jiwa",
+    "bantuan logistik",
     "tewas",
     "mengungsi",
     "BNPB",
@@ -51,6 +58,23 @@ def get_article_links(
 
 def parse_article(scraper: BaseNewsScraper, url: str) -> dict | None:
     return scraper.parse_article(url)
+
+
+SOURCE_SUMMARY_ORDER = [
+    "Kompas.com",
+    "Detik.com",
+    "Tempo.co",
+    "Republika.co.id",
+    "Kumparan.com",
+    "Liputan6.com",
+    "CNNIndonesia.com",
+    "Tribunnews.com",
+    "Sindonews.com",
+    "Suara.com",
+    "Okezone.com",
+    "Antara News",
+    "BNPB.go.id",
+]
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -104,6 +128,8 @@ def main() -> None:
     global_seen_urls: set[str] = set()
     global_duplicate_urls_skipped = 0
     source_stats: dict[str, dict[str, int]] = {}
+    seen_titles: set[str] = set()
+    seen_title_fingerprints: list[str] = []
 
     logging.info("Using %d disaster filter keywords: %s", len(DISASTER_KEYWORDS), ", ".join(DISASTER_KEYWORDS))
     for scraper in scrapers:
@@ -123,7 +149,7 @@ def main() -> None:
             global_seen_urls.add(url)
             unique_links.append(url)
 
-        source_stats.setdefault(scraper.config.name, {"candidate": 0, "parsed": 0, "accepted": 0})
+        source_stats.setdefault(scraper.config.name, {"candidate": 0, "parsed": 0, "accepted": 0, "rejected": 0})
         source_stats[scraper.config.name]["candidate"] += len(unique_links)
 
         logging.info(
@@ -131,6 +157,8 @@ def main() -> None:
                 "Collecting links from %s complete: "
                 "unique_urls_found=%d duplicate_urls_skipped=%d "
                 "archive_urls_found=%d archive_urls_skipped=%d archive_urls_after_filter=%d "
+                "sitemap_urls_found=%d category_urls_found=%d "
+                "article_urls_before_filter=%d article_urls_after_filter=%d "
                 "global_duplicates_skipped=%d"
             ),
             scraper.config.name,
@@ -139,8 +167,16 @@ def main() -> None:
             scraper.archive_urls_found,
             scraper.archive_urls_skipped,
             scraper.archive_urls_after_filter,
+            scraper.sitemap_urls_found,
+            scraper.category_urls_found,
+            scraper.article_urls_before_filter,
+            scraper.article_urls_after_filter,
             global_duplicate_urls_skipped,
         )
+        logging.info("Found %d sitemap URLs from %s", scraper.sitemap_urls_found, scraper.config.name)
+        logging.info("Found %d category URLs from %s", scraper.category_urls_found, scraper.config.name)
+        logging.info("Found %d article URLs before filter from %s", scraper.article_urls_before_filter, scraper.config.name)
+        logging.info("Found %d article URLs after filter from %s", scraper.article_urls_after_filter, scraper.config.name)
         logging.info("Found %d unique candidate links from %s", len(unique_links), scraper.config.name)
         if scraper.config.name == "Liputan6.com":
             logging.info("Found %d candidate links from Liputan6.com", len(unique_links))
@@ -152,12 +188,24 @@ def main() -> None:
         if url in seen_urls:
             continue
         seen_urls.add(url)
-        source_stats.setdefault(scraper.config.name, {"candidate": 0, "parsed": 0, "accepted": 0})
+        source_stats.setdefault(scraper.config.name, {"candidate": 0, "parsed": 0, "accepted": 0, "rejected": 0})
         source_stats[scraper.config.name]["parsed"] += 1
         record = parse_article(scraper, url)
-        if record:
-            source_stats[scraper.config.name]["accepted"] += 1
-            records.append(record)
+        if not record:
+            source_stats[scraper.config.name]["rejected"] += 1
+            continue
+
+        title_key = normalize_title_for_dedup(record.get("title", ""))
+        title_fingerprint = title_near_duplicate_fingerprint(record.get("title", ""))
+        if is_duplicate_title(title_key, title_fingerprint, seen_titles, seen_title_fingerprints):
+            source_stats[scraper.config.name]["rejected"] += 1
+            logging.info("Skipping duplicate or near-duplicate title: %s", record.get("title", ""))
+            continue
+
+        seen_titles.add(title_key)
+        seen_title_fingerprints.append(title_fingerprint)
+        source_stats[scraper.config.name]["accepted"] += 1
+        records.append(record)
 
     records = remove_duplicate_urls(records)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -176,6 +224,67 @@ def main() -> None:
         print(f"Liputan6 candidate links: {liputan6_stats['candidate']}")
         print(f"Liputan6 parsed articles: {liputan6_stats['parsed']}")
         print(f"Liputan6 accepted articles: {liputan6_stats['accepted']}")
+    log_source_summary(source_stats)
+
+
+def normalize_title_for_dedup(title: str) -> str:
+    normalized = re.sub(r"[^\w\s]", " ", title.casefold())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def title_near_duplicate_fingerprint(title: str) -> str:
+    normalized = normalize_title_for_dedup(title)
+    stopwords = {
+        "di",
+        "ke",
+        "dari",
+        "dan",
+        "yang",
+        "ini",
+        "itu",
+        "dalam",
+        "untuk",
+        "akibat",
+        "karena",
+        "usai",
+        "hingga",
+    }
+    tokens = [token for token in normalized.split() if token not in stopwords]
+    return " ".join(tokens[:14])
+
+
+def is_duplicate_title(
+    title_key: str,
+    title_fingerprint: str,
+    seen_titles: set[str],
+    seen_title_fingerprints: list[str],
+) -> bool:
+    if not title_key:
+        return True
+    if title_key in seen_titles:
+        return True
+    for seen_fingerprint in seen_title_fingerprints:
+        if not seen_fingerprint:
+            continue
+        if SequenceMatcher(None, title_fingerprint, seen_fingerprint).ratio() >= 0.92:
+            return True
+    return False
+
+
+def log_source_summary(source_stats: dict[str, dict[str, int]]) -> None:
+    logging.info("## Source Summary")
+    print("## Source Summary")
+    for source in SOURCE_SUMMARY_ORDER:
+        stats = source_stats.get(source, {"candidate": 0, "parsed": 0, "accepted": 0, "rejected": 0})
+        line = (
+            f"{source}: Found {stats.get('candidate', 0)} candidate links, "
+            f"Parsed {stats.get('parsed', 0)} articles, "
+            f"Accepted {stats.get('accepted', 0)} articles, "
+            f"Rejected {stats.get('rejected', 0)} articles"
+        )
+        logging.info(line)
+        print(line)
 
 
 if __name__ == "__main__":
